@@ -1,0 +1,1505 @@
+---
+title: "Serology Manuscript Figure"
+output: html_document
+date: "2025-10-22"
+Author: "Lucas Penny"
+Supervisor: "Dr. Scott Bratman"
+Insitution: "Department of Medical Biophysics, University of Toronto"
+---
+
+# Serology Manuscript
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(ComplexHeatmap)
+library(corrplot)
+library(cowplot)
+library(data.table)
+library(dplyr)
+library(faraway)
+library(ggExtra)
+library(GGally)
+library(ggsci)
+library(ggplot2)
+library(ggpubr)
+library(ggthemr)
+library(gridExtra)
+library(gt) 
+library(gtsummary)
+library(plotly)
+library(rlang)
+library(scales)
+library(survival)
+library(survminer)
+library(readxl)
+library(reshape2)
+library(tidyverse)
+
+# library(DataExplorer)
+# library(forestmodel)
+# library(hrbrthemes)
+# library(plotly)
+# library(heatmaply)
+# library(colorspace)
+
+
+
+##############
+# set plot theme
+##############
+
+ggthemr("dust")
+swatch()
+# "#555555" "#db735c" "#EFA86E" "#9A8A76" "#F3C57B" "#7A6752" "#2A91A2" "#87F28A" "#6EDCEF"
+
+
+# cols = c("#555555","#9BA1E7","#F2B79F","#749B58E5","#DB735C","#D3CEC0",
+#          "#516897","#B1B7BF","#F3C57B")
+
+cols = c("#555555","#8287C4","#553555","#516897","#DC8A78","#B6948B","#D2CEC1",
+         "#AEA3A8","#749B58E5","#ECAF4D")
+
+# cols = c("#555555","#8287C4","#553555","#516897","#DC8A78","#B6948B","#D2CEC1",
+#          "#AEA3A8","#749B58E5","#ECAF4D")
+
+
+
+ugly <- define_palette(
+  swatch = cols,
+  gradient = c(lower = cols[1L], upper = cols[2L]),
+  gridline = c("#DAD9D9")
+)
+
+ggthemr(ugly)
+
+#
+show_col(pal_npg("nrc")(9))
+show_col(pal_jco("default")(9))
+show_col(pal_igv("default",alpha=0.9)(9))
+
+
+
+```
+
+```{r}
+
+df_OPC <- read_excel("/path/to/file")
+colnames(df_OPC)[2] = c("patient")
+
+
+
+
+df_OPC = df_OPC %>% 
+  filter(Timepoint == "Baseline")
+
+patient_ids_OPC =unique(df_OPC$patient)
+
+
+###############
+# df_sero_processing
+###############
+
+df_sero = read_excel("/path/to/file/")
+
+patient_ids_sero =unique(df_sero$patient)
+
+df_sero = df_sero %>% 
+  filter(patient %in% patient_ids_OPC)
+
+
+df_ctdna_sero <- df_sero %>%
+  left_join(dplyr::select(df_OPC,c("patient","HPV_corrected","seq_copies_mL_corrected1.67"))) %>% 
+  select(-c(38:54))
+
+
+```
+
+# File Processing
+
+
+```{r}
+
+
+###############
+# OPC
+###############
+
+df_OPC <- read_excel("/path/to/file")
+colnames(df_OPC)[2] = c("patient")
+
+
+
+
+df_OPC = df_OPC %>% 
+  filter(Timepoint == "Baseline")
+
+patient_ids_OPC =unique(df_OPC$patient)
+
+###############
+# Clinical Data
+###############
+
+df_clinical_data = fread("/path/to/file")
+df_gtv_nodes <- fread("/path/to/file")
+
+df_gtv_primary <- fread("/path/to/file")
+
+
+###############
+# df_sero_processing
+###############
+
+df_sero = read_excel("/path/to/file")
+
+patient_ids_sero =unique(df_sero$patient)
+
+df_sero = df_sero %>% 
+  filter(patient %in% patient_ids_OPC)
+
+mfi_df <- data.frame(
+  Genotype = c("HPV6", "HPV6", "HPV6", "HPV11", "HPV11", "HPV11", "HPV16", "HPV16", "HPV16", "HPV16", "HPV16", "HPV16", "HPV18", "HPV18", "HPV18", "HPV31", "HPV31", "HPV31", "HPV33", "HPV33", "HPV33", "HPV45", "HPV45", "HPV45", "HPV52", "HPV52", "HPV52"),
+  Gene = c("E6", "E7", "L1", "E6", "E7", "L1", "E1", "E2", "E4", "E6", "E7", "L1", "E6", "E7", "L1", "E6", "E7", "L1", "E6", "E7", "L1", "E6", "E7", "L1", "E6", "E7", "L1"),
+  MFI = c(500, 364, 571, 260, 200, 500, 200, 679, 876, 484, 548, 422, 243, 789, 394, 890, 200, 712, 253, 500, 515, 249, 200, 368, 271, 200, 547)
+)
+
+mfi_df <- mfi_df %>%
+  mutate(HPV_genotype = paste(Genotype, Gene, sep = "")) %>% 
+  dplyr::select(HPV_genotype,MFI)
+
+ab_names = mfi_df$HPV_genotype
+
+df_sero <- df_sero %>%
+  rename_with(~sub(" fl$", "", .)) %>%
+  rename_with(~ifelse(grepl("^[0-9]", .), paste0("HPV", .), .))
+
+
+for(col_name in names(df_sero)) {
+  if(col_name %in% mfi_df$HPV_genotype) {
+    # Find the matching MFI value
+    matching_MFI <- mfi_df$MFI[mfi_df$HPV_genotype == col_name]
+    # Update values in df_sero based on the condition
+    df_sero[[col_name]] <- ifelse(df_sero[[col_name]] < matching_MFI, 0, df_sero[[col_name]])
+  }
+}
+
+
+
+
+###############
+
+
+df_multi_align = read_excel("/path/to/file")
+
+df_multi_align = df_multi_align %>% 
+  filter(Timepoint == "Baseline") %>% 
+  select(patient,`seq_copies_mL_corrected1.67_HPV-16`,`seq_copies_mL_corrected1.67_HPV-18`,`seq_copies_mL_corrected1.67_HPV-31`,`seq_copies_mL_corrected1.67_HPV-33`,`seq_copies_mL_corrected1.67_HPV-35`,percentage) %>% 
+  mutate(`HPV-16_multialign` = `seq_copies_mL_corrected1.67_HPV-16`,
+         `HPV-18_multialign` = `seq_copies_mL_corrected1.67_HPV-18`,
+         `HPV-31_multialign` = `seq_copies_mL_corrected1.67_HPV-31`,
+         `HPV-33_multialign` = `seq_copies_mL_corrected1.67_HPV-33`,
+         `HPV-35_multialign` = `seq_copies_mL_corrected1.67_HPV-35`) %>% 
+  select(-`seq_copies_mL_corrected1.67_HPV-16`,
+         -`seq_copies_mL_corrected1.67_HPV-18`,
+         -`seq_copies_mL_corrected1.67_HPV-31`,
+         -`seq_copies_mL_corrected1.67_HPV-33`,
+         -`seq_copies_mL_corrected1.67_HPV-35`)
+
+
+###############
+
+# Right join all dataframes
+df_combined_clin_OPC_sero <- df_sero %>%
+  left_join(df_gtv_primary, by = 'patient') %>%
+  left_join(df_gtv_nodes, by = 'patient') %>%
+  left_join(df_clinical_data, by = 'patient') %>%
+  left_join(df_multi_align,by = "patient") %>% 
+  left_join(dplyr::select(df_OPC,c("patient","HPV_corrected","seq_copies_mL_corrected1.67","IntegrationLow","IntegrationHigh","Integration_score","HPV_corrected","dPCR_copies_mL_average","HPV_dPCR","HPV-16","HPV-18","HPV-26","HPV-31","HPV-33","HPV-35")))
+
+df_combined_clin_OPC_sero = df_combined_clin_OPC_sero[!duplicated(df_combined_clin_OPC_sero$patient), ]
+df_combined_clin_OPC_sero = df_combined_clin_OPC_sero %>%
+  select(-HPV_corrected, -`Dominant Genotype`, everything(), HPV_corrected, `Dominant Genotype`)
+
+
+df_mutation = fread('/path/to/file')
+colnames(df_mutation)[1] = "patient"
+
+df_mutation_meanVAF = df_mutation %>% 
+  group_by(patient) %>% 
+  summarise(mean_VAF = mean(allUniqDcs.vaf.Baseline, na.rm = FALSE))
+
+df_combined_clin_OPC_sero = df_combined_clin_OPC_sero %>%
+  left_join(df_mutation_meanVAF,by ="patient") %>% 
+  mutate(mean_VAF = ifelse(is.na(mean_VAF), 0, mean_VAF))
+
+
+df_combined_clin_OPC_sero <- df_combined_clin_OPC_sero %>%
+  mutate(   # Replace NA with 0 in gtv_primary
+    gtv_combined = coalesce(gtv_primary, 0) + coalesce(sum_gtv_nodes, 0)   # Sum the two columns
+  )
+
+
+print("Patients that don't overlap")
+setdiff(patient_ids_OPC,patient_ids_sero)
+setdiff(patient_ids_sero,patient_ids_OPC)
+
+remove(list = c("df_OPC","df_clinical_data","df_gtv_nodes","df_sero","df_gtv_primary","df_mutation","df_mutation_meanVAF", "mfi_df", "ab_names"))
+```
+
+# Table 1
+
+```{r}
+attach('/path/to/file.Rdata'); df_clinical_ctdna <- df_clinical_ctdna
+
+
+
+array_full_table_variables <- c(
+      'p16_status',
+      'sex',
+      'age_at_dx',
+      'ecog',
+      'stage_t_ajcc8',
+      'stage_n_ajcc8',
+      'stage_ajcc8',
+      'smoking_status',
+      'smoking_packyears',
+      'rt_regimen',
+      'local_failure',
+      'regional_failure',
+      'distant_failure',
+      'vital_status'
+    )
+
+array_full_table_labels <- list(
+      p16_status ~ 'p16 status',
+      sex ~ 'Sex',
+      age_at_dx ~ 'Age at diagnosis',
+      ecog ~ 'ECOG Status',
+      stage_t_ajcc8 ~ 'T Category',
+      stage_n_ajcc8 ~ 'N Category',
+      stage_ajcc8 ~ 'Overall stage (AJCC8)',
+      smoking_status ~ 'Smoking status',
+      smoking_packyears ~ 'Smoking packyears',
+      rt_regimen ~ 'RT or CRT',
+      local_failure ~ 'Local Failure',
+      regional_failure ~ 'Regional Failure',
+      distant_failure ~ 'Distant Failure',
+      vital_status ~ 'Vital Status'
+    )
+
+abridged_table_variables <- c('age_at_dx', 'sex', 'p16_status','stage_ajcc8','stage_t_ajcc8', 'stage_n_ajcc8', 'smoking_status')
+array_abridged_table_labels <- list(
+      sex ~ 'Sex',
+      age_at_dx ~ 'Age at diagnosis',
+      p16_status ~ 'p16 status',
+      stage_ajcc8 ~ 'Overall stage (AJCC8)',
+      stage_t_ajcc8 ~ 'T Category',
+      stage_n_ajcc8 ~ 'N Category',
+      smoking_status ~ 'Smoking status'
+    )
+
+table <- df_clinical_ctdna %>%
+  tbl_summary(
+    include = all_of(abridged_table_variables),
+    label = array_abridged_table_labels
+  )  %>%
+  as_gt() %>%
+  tab_options(
+    row.striping.include_table_body = FALSE  # Disable default striping if needed
+  ) %>%
+  tab_style(
+    style = list(
+      cell_fill(color = "gray95")
+    ),
+    locations = cells_body(rows = seq(1, 24, by = 2))
+  ) %>% 
+  cols_width(
+    everything() ~ px(200)
+  )
+
+table
+```
+
+# Figure 1
+
+-   Figure is in Biorender
+
+# Figure 2
+
+## Figure 2A
+
+This will plot 7 extra squares, I removed them in powerpoint.
+
+```{r}
+
+test <- df_combined_clin_OPC_sero %>% 
+  select(HPV_corrected, `Dominant Genotype`) %>%
+  mutate(across(everything(), ~replace(., is.na(.), "NA")))  %>%  # Replace NA with "HPV99" in all columns
+  mutate(across(everything(), ~ifelse(. == "0", "NA", .))) %>% 
+  arrange(-desc(HPV_corrected), -desc(`Dominant Genotype`))
+
+# Convert selected columns to a matrix, preserving their categorical nature
+Heatmap_Matrix = test %>% 
+  select(HPV_corrected) %>% 
+  pull()
+
+Heatmap_Matrix <- matrix(Heatmap_Matrix, nrow = 21, byrow = TRUE)
+
+Hexagon <- function(x, y, unitcell = 1, col = col) {
+  # Vertices of the right-angled triangle
+  x_vertices <- c(x, x + unitcell, x)
+  y_vertices <- c(y + unitcell, y + unitcell, y)
+  
+  # Drawing the triangle without a border
+  polygon(x_vertices, y_vertices, col = col, border = "white")
+  
+  shorten_amount <- 0.05 * unitcell
+  # Adding a border to the hypotenuse
+  segments(x0 = x + shorten_amount, 
+           y0 = y +shorten_amount, 
+           x1 = x + unitcell - shorten_amount, 
+           y1 = y + unitcell - shorten_amount, col = "black", lwd = 0.8)
+  
+}
+
+ # "#555555"   "#F3C57B"   "#516897"   "#DB735C"   "#9BA1E7"   "#749B58E5" "#B1A2A8"   "#6BD76BE5"
+col_a = cols[2]
+col_b = cols[3]
+col_c = cols[4]
+col_d = cols[6]
+col_e =  cols[7]
+col_f = cols[8]
+col_g = "white"
+# Create a color palette for the categories
+# Add or change the colors based on your categories
+category_colors <- setNames(c( col_a,col_b,col_c,col_d,col_e,col_f,col_g), c("HPV-16","HPV-18","HPV-26", "HPV-33", "HPV-35", "HPV-38", "NA"))
+
+# "#E64B3599" "#4DBBD599" "#00A08799" "#3C548899" "#F39B7F99" "#8491B499" "#91D1C299" "#DC000099" "#7E614899"
+
+
+
+# Match the categories in the Heatmap_Matrix with their corresponding colors
+ColorCode <- matrix(category_colors[Heatmap_Matrix], nrow = nrow(Heatmap_Matrix), byrow = FALSE)
+
+# Number of rows and columns of your matrix
+SOM_Rows <- dim(Heatmap_Matrix)[1]
+SOM_Columns <- dim(Heatmap_Matrix)[2]
+
+# Plot settings
+png("~/Desktop/heatmap_plot.png", bg = "transparent", res = 300, width = 2000, height = 2000)
+
+par(mar = c(0.4, 0.4,0.4,0.4))
+plot(0, 0, type = "n", axes = FALSE, xlim = c(0, SOM_Columns),
+     ylim = c(0, SOM_Rows), xlab = "", ylab = "", asp = 1)
+# Plot settings
+plot(0, 0, type = "n", axes = FALSE, xlim = c(0, SOM_Columns),
+     ylim = c(0, SOM_Rows), xlab = "", ylab = "", asp = 1)
+
+# Plotting hexagons
+
+for (row in 1:SOM_Rows) {
+  for (column in 0:(SOM_Columns - 1))
+    Hexagon(column, row - 1, col = ColorCode[row, column + 1])
+}
+
+# Add a legend to your plot manually since your categories are not on a scale
+# legend("topright", legend = names(category_colors), fill = category_colors, border = NA)
+
+dev.off()
+
+```
+
+```{r}
+
+# Convert selected columns to a matrix, preserving their categorical nature
+Heatmap_Matrix = test %>% 
+  select(`Dominant Genotype`) %>% 
+  pull()
+
+Heatmap_Matrix <- matrix(Heatmap_Matrix, nrow = 21, byrow = TRUE)
+
+Hexagon <- function(x, y, unitcell = 1, col = col) {
+  # Vertices of the right-angled triangle, flipped horizontally and then vertically
+  x_vertices <- c(x + unitcell, x, x + unitcell)
+  y_vertices <- c(y, y, y + unitcell)  # Inverting y-coordinates flips it vertically
+  
+  # Drawing the triangle without a border
+  polygon(x_vertices, y_vertices, col = col, border = "white")
+  
+  shorten_amount <- 0.05 * unitcell
+  # Adding a border to the hypotenuse
+  segments(x0 = x + shorten_amount, 
+           y0 = y +shorten_amount, 
+           x1 = x + unitcell - shorten_amount, 
+           y1 = y + unitcell - shorten_amount, col = NA, lwd = 0.2)
+   
+}
+
+
+
+# Create a color palette for the categories
+# For example, "Positive" = "green", "Negative" = "red"
+# Add or change the colors based on your categories
+category_colors <- setNames(c(col_a,col_b,col_c,col_d,col_e,col_f,col_g), c("HPV16","HPV18", "HPV26", "HPV33","HPV35",  "HPV38", "NA"))
+
+
+# Match the categories in the Heatmap_Matrix with their corresponding colors
+ColorCode <- matrix(category_colors[Heatmap_Matrix], nrow = nrow(Heatmap_Matrix), byrow = FALSE)
+
+# Number of rows and columns of your matrix
+SOM_Rows <- dim(Heatmap_Matrix)[1]
+SOM_Columns <- dim(Heatmap_Matrix)[2]
+
+# Plot settings
+png("~/Desktop/heatmap_plot_2.png", bg = "transparent", res = 300, width = 2000, height = 2000)
+
+par(mar = c(0.4, 0.4,0.4,0.4))
+plot(0, 0, type = "n", axes = FALSE, xlim = c(0, SOM_Columns),
+     ylim = c(0, SOM_Rows), xlab = "", ylab = "", asp = 1)
+# Plot settings
+plot(0, 0, type = "n", axes = FALSE, xlim = c(0, SOM_Columns),
+     ylim = c(0, SOM_Rows), xlab = "", ylab = "", asp = 1)
+
+# Plotting hexagons
+
+for (row in 1:SOM_Rows) {
+  for (column in 0:(SOM_Columns - 1))
+    Hexagon(column, row - 1, col = ColorCode[row, column + 1])
+}
+
+# Add a legend to your plot manually since your categories are not on a scale
+legend("topright", legend = names(category_colors), fill = category_colors, border = NA)
+
+dev.off()
+
+```
+
+## Figure 2B:
+
+
+```{r, fig.width= 8,fig.height =10 }
+df_combined_clin_OPC_sero_2b = df_combined_clin_OPC_sero  %>%
+ filter(!patient %in% c("HN2853","HN2363","HN2996","HN2653"))
+
+
+########################
+# R-squared values
+########################
+
+model <- lm(log10(seq_copies_mL_corrected1.67 + 1) ~ log10(dPCR_copies_mL_average + 1), data = df_combined_clin_OPC_sero_2b)
+
+# Extract coefficients
+intercept <- coef(model)[1]
+slope <- coef(model)[2]
+
+# Extract R-squared value
+summary(model)$r.squared
+
+########################
+# Your ggplot code with minor ticks added
+########################
+
+
+# Create the plot
+ggplot(data = df_combined_clin_OPC_sero_2b, aes(x = log10(dPCR_copies_mL_average + 0.01), y = log10(seq_copies_mL_corrected1.67 + 0.01), color = HPV_dPCR, shape = HPV_dPCR)) +
+  geom_point(aes(fill = HPV_dPCR), colour = "black", size = 5, alpha = 1) +
+  labs(x = "ddPCR ctDNA Conc. [log(Copies/mL)]", y = " HPV-seq ctDNA Conc. [log(Copies/mL)]", color = "HPV genotypes", shape = "HPV genotypes", fill = "HPV genotypes") +
+  scale_color_manual(values = c("HPV16" = cols[2], "HPV18" = cols[3], "HPV33" = cols[6], "HPV35" = cols[7])) +
+  scale_fill_manual(values = c("HPV16" = cols[2], "HPV18" = cols[3], "HPV33" = cols[6], "HPV35" = cols[7])) +
+  scale_shape_manual(values = c("HPV16" = 21, "HPV18" = 22, "HPV33" = 23, "HPV35" = 24)) +  # Set different shapes
+  scale_x_continuous(breaks = seq(-1, max(log10(df_combined_clin_OPC_sero_2b$dPCR_copies_mL_average + 0.00001)), by = 0.5), minor_breaks = seq(-1, max(log10(df_combined_clin_OPC_sero_2b$dPCR_copies_mL_average + 0.00001)), by = 0.1)) +
+  scale_y_continuous(breaks = seq(-1, max(log10(df_combined_clin_OPC_sero_2b$seq_copies_mL_corrected1.67 + 1)), by = 0.5), minor_breaks = seq(-1, max(log10(df_combined_clin_OPC_sero_2b$seq_copies_mL_corrected1.67 + 1)), by = 0.1)) +
+  theme(
+    legend.position = "bottom",
+    legend.text = element_text(size = 16), 
+    legend.title = element_text(size = 16),
+    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 16)
+  ) +
+  annotate("text", x = log10(0.1), y = log10(0.1), label = "N.D.", size = 5, color = "red", hjust = 1, vjust = 1.2) +
+  geom_segment(aes(x = log10(0.1), y = -Inf, xend = log10(0.1),yend = log10(0.1)), color = "black", linetype = "dotted",size = 0.8) +
+geom_segment(aes(x = -Inf, y = log10(0.1), xend = log10(0.1),yend = log10(0.1)), color = "black", linetype = "dotted",size = 0.8)
+# ##################
+# # Checking to see which are not detected by dPCR but are HPV-seq
+# ##################
+# 
+# df_undetected_dpcr = df_combined_clin_OPC_sero %>% 
+#   filter(dPCR_copies_mL_average == 0 & seq_copies_mL_corrected1.67 != 0) %>% 
+#   select(patient,HPV_corrected,HPV_dPCR,seq_copies_mL_corrected1.67,dPCR_copies_mL_average)
+```
+
+## Figure 2C
+
+```{r Full_heatmap, fig.width= 8, fig.height= 10,warning=FALSE,eval= FALSE}
+
+df_heatmap = df_combined_clin_OPC_sero %>% 
+  select(patient,HPV_corrected,seq_copies_mL_corrected1.67) %>% 
+  pivot_wider(names_from = HPV_corrected, values_from = seq_copies_mL_corrected1.67) %>% 
+  mutate(across(everything(), ~replace(., is.na(.), "0"))) %>% 
+  select(-`NA`,-`HPV-26`) %>% 
+  left_join(select(df_combined_clin_OPC_sero,patient,age_at_dx,stage_ajcc8,sex,smoking_packyears,smoking_status,mean_VAF,HPV16,	HPV18,	HPV33,	HPV31,	HPV35))
+
+patients = df_heatmap$patient
+rownames(df_heatmap) = df_heatmap$patient
+
+mat_HPVDNA = df_heatmap[,c("patient","HPV-16","HPV-18","HPV-33","HPV-35")] %>% 
+  column_to_rownames("patient") %>% 
+  mutate(`HPV-16` = ifelse(is.na(`HPV-16`),0,log10(as.numeric(`HPV-16`)+1)),
+         `HPV-18` = ifelse(is.na(`HPV-18`),0,log10(as.numeric(`HPV-18`)+1)),
+         `HPV-31` = 0,
+         `HPV-33` = ifelse(is.na(`HPV-33`),0,log10(as.numeric(`HPV-33`)+1)),
+         `HPV-35` = ifelse(is.na(`HPV-35`),0,log10(as.numeric(`HPV-35`)+1))) %>% 
+  select(`HPV-16`,`HPV-18`,`HPV-31`,`HPV-33`,`HPV-35`) %>%
+  arrange(-`HPV-16`, -`HPV-18`, -`HPV-33`, -`HPV-35`,-`HPV-31`)
+
+
+
+
+mat_age = df_heatmap$age_at_dx
+names(mat_age) = patients
+mat_age = mat_age[rownames(mat_HPVDNA)]
+
+mat_stage = df_heatmap$stage_ajcc8
+names(mat_stage) = patients
+mat_stage = mat_stage[rownames(mat_HPVDNA)]
+
+mat_sex = df_heatmap$sex
+names(mat_sex) = patients
+mat_sex = mat_sex[rownames(mat_HPVDNA)]
+
+mat_packyears = df_heatmap$smoking_packyears
+names(mat_packyears) = patients
+mat_packyears = mat_packyears[rownames(mat_HPVDNA)]
+
+mat_smokeStatus = df_heatmap$smoking_status
+names(mat_smokeStatus) = patients
+mat_smokeStatus = mat_smokeStatus[rownames(mat_HPVDNA)]
+
+mat_mean_VAF = df_heatmap$mean_VAF
+names(mat_mean_VAF) = patients
+mat_mean_VAF = mat_mean_VAF[rownames(mat_HPVDNA)]
+
+
+mat_HPV_sero = df_heatmap[,c("patient","HPV16",	"HPV18",	"HPV33",	"HPV31",	"HPV35")] %>% 
+  column_to_rownames("patient") 
+
+colnames(mat_HPV_sero) = c("Serology",	"Serology",	"Serology",	"Serology",	"Serology")
+
+mat_HPV_sero = mat_HPV_sero[rownames(mat_HPVDNA), ]
+
+col1 = c("#F1F1F1",sequential_hcl(10, "Oslo")[2:9])
+col2 = c("white",c(rev(sequential_hcl(9, "Grays")))[2:9])
+col3 = rev(sequential_hcl(9, "YlOrBr"))[5:9]
+col4 = sequential_hcl(9, "Greens")
+col4 = structure(col4[c(3,2,1)], names = c("I","II","III"))
+col5 = sequential_hcl(9, "Purples 3")
+col5 = structure(col5[c(4,6)], names = c("Male","Female"))
+colA = rev(sequential_hcl(9, "Blues 3"))
+colB = c(rev(sequential_hcl(9, "Oranges")))
+colC = sequential_hcl(9, "Reds 3")
+colC = structure(colC[c(8,5,2)], names = c("Ex-smoker","Non-smoker","Current"))
+
+ht1 = Heatmap(mat_age, name = "Age",show_row_dend = FALSE, column_names_side = "bottom",col =col3,width = 5,column_labels = "Age", 
+              column_names_gp  = gpar(fontsize = 18))
+ht2 = Heatmap(mat_stage, name = "Stage",show_row_dend = FALSE, column_names_side = "bottom",col=col4,width = 5,column_labels = "Stage",
+              column_names_gp  = gpar(fontsize = 18))
+ht3 = Heatmap(mat_sex, name = "Sex",show_row_dend = FALSE, column_names_side = "bottom",col=col5,width = 5,column_labels = "Sex",
+              column_names_gp  = gpar(fontsize = 18))
+htA = Heatmap(mat_packyears, name = "Packyears",show_row_dend = FALSE, column_names_side = "bottom",col=colA,width = 5,column_labels = "Packyears",
+              column_names_gp  = gpar(fontsize = 18))
+htB = Heatmap(mat_mean_VAF, name = "VAF",show_row_dend = FALSE, column_names_side = "bottom",col=colB,width = 5,column_labels = "VAF",
+              column_names_gp  = gpar(fontsize = 18))
+htC = Heatmap(mat_smokeStatus, name = "Smoking",show_row_dend = FALSE, column_names_side = "bottom",col=colC,width = 5,column_labels = "Smoking", 
+              column_names_gp  = gpar(fontsize = 18))
+ht4 = Heatmap(mat_HPVDNA, name = "log(ctDNA copies/mL)",show_column_dend = FALSE,show_row_dend = FALSE, column_names_side = "bottom",cluster_rows = FALSE,col= col2,column_labels = c("HPV ctDNA","HPV ctDNA","HPV ctDNA","HPV ctDNA","HPV ctDNA"),column_gap = unit(0, "mm"),
+              column_names_gp  = gpar(fontsize = 18))
+ht5 = Heatmap(mat_HPV_sero, name = "Serology (MFI)",show_column_dend = FALSE,show_row_dend = FALSE,show_row_names = FALSE, column_names_side = "bottom",col = col1,
+              column_names_gp  = gpar(fontsize = 18))
+
+ht_list = ht1 + ht2 + ht3 + htC + ht4[,1] + ht5[,1] + ht4[,2] + ht5[,2]  + ht4[,4] + ht5[,4] + ht4[,5] + ht5[,5] + ht4[,3] + ht5[,3]  
+
+draw(ht_list, ht_gap = unit(c(0,0,0,3,0,0,0,0,0,0,0,0,0), "mm"), main_heatmap = "log(ctDNA copies/mL)")
+
+
+```
+
+# Figure 3
+
+## Figure 3C
+
+```{r fig.width = 9, fig.height=7}
+df_subset_E6 = df_combined_clin_OPC_sero %>% 
+  select(HPV16E6, HPV18E6, HPV31E6, HPV33E6, HPV35E6)
+
+df_subset_E7 = df_combined_clin_OPC_sero %>% 
+  select(HPV16E7, HPV18E7, HPV31E7, HPV33E7, HPV35E7) 
+
+df_subset_L1 = df_combined_clin_OPC_sero %>% 
+  select(HPV16L1, HPV18L1, HPV31L1, HPV33L1, HPV35L1)
+
+
+cor_matrixE6 <- cor(df_subset_E6) %>% 
+  as.data.frame() %>% 
+  pivot_longer(cols = c(HPV16E6, HPV18E6, HPV31E6, HPV33E6, HPV35E6)) %>% 
+  filter(value != 1) %>% 
+  mutate(antibody = "E6")
+
+cor_matrixE7 <- cor(df_subset_E7) %>% 
+  as.data.frame() %>% 
+  pivot_longer(cols = c(HPV16E7, HPV18E7, HPV31E7, HPV33E7, HPV35E7)) %>% 
+  filter(value != 1) %>% 
+  mutate(antibody = "E7")
+
+cor_matrixL1 <- cor(df_subset_L1) %>% 
+  as.data.frame() %>% 
+  pivot_longer(cols = c(HPV16L1, HPV18L1, HPV31L1, HPV33L1, HPV35L1)) %>% 
+  filter(value != 1) %>% 
+  mutate(antibody = "L1") %>% 
+  bind_rows(cor_matrixE7,cor_matrixE6) %>% 
+  mutate(genotype = substr(name, 1, 5))
+
+
+cor_matrixL1 = cor_matrixL1 %>% 
+  filter(genotype == "HPV16")
+
+fig_d = cor_matrixL1 %>%
+  ggplot2::ggplot(aes(antibody, value,fill=factor(genotype))) +
+  geom_boxplot(alpha=0.7) + geom_point(color="black",size=5,pch=21,alpha=1) + 
+  labs(x = "HPV16 Oncoproteins", y = "Pearson Correlation",fill = "HPV Genotype") +
+  theme(legend.position = NULL,
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 20),# Adjust the text size
+        legend.title = element_text(size = 18),
+        axis.text = element_text(size = 20)) 
+
+
+fig_d = ggarrange(fig_d, labels = c("C"),font.label = list(size=25))
+fig_d
+```
+
+### 
+
+## Figure 3D
+
+```{r}
+###
+# smaller matrix
+###
+
+df_subset = df_combined_clin_OPC_sero %>% 
+  select(HPV16E1, HPV16E2, HPV16E4, HPV16E6, HPV16E7, HPV16L1, seq_copies_mL_corrected1.67,dPCR_copies_mL_average) %>% 
+  mutate(`HPV-seq` = log10(seq_copies_mL_corrected1.67+1),
+         dPCR = log10(dPCR_copies_mL_average+1)) %>% 
+  select(-seq_copies_mL_corrected1.67,-dPCR_copies_mL_average,-dPCR) 
+
+
+
+cor_matrix <- cor(df_subset)
+testRes = cor.mtest(cor_matrix, conf.level = 0.95)
+
+# round(cor_matrix, 3)
+fig_e = corrplot(cor_matrix,tl.col = 'black',
+                 method = 'circle') %>%
+  corrRect(name = c('HPV16E1',"HPV-seq","HPV-seq"))
+# corrplot(cor_matrix,tl.col = 'black',cl.pos = 'b')
+
+
+```
+
+## 
+
+## Figure 3A
+
+```{r fig.width= 2.5, fig.height=7.5}
+# unique(df_combined_clin_OPC_sero$HPV_corrected)
+
+df_test = df_combined_clin_OPC_sero %>% 
+  rowwise() %>%
+  mutate(max_value_genotype = names(.)[43:52][which.max(c_across(43:52))]) %>% 
+  mutate(max_value = max(c_across(43:52))) %>% 
+  ungroup() %>% 
+  select(patient,HPV16,HPV18,HPV31,HPV33,HPV35,`HPV-16`,`HPV-18`,`HPV-26`,`HPV-31`,`HPV-33`,`HPV-35`,max_value,max_value_genotype,`Dominant Genotype`)
+
+df_combined_clin_OPC_sero_3 = df_combined_clin_OPC_sero %>% 
+  rowwise() %>%
+  mutate(max_value_genotype = names(.)[43:52][which.max(c_across(43:52))]) %>% 
+  mutate(max_value = max(c_across(43:52))) %>% 
+  ungroup() %>% 
+  select(patient,HPV16,HPV18,HPV31,HPV33,HPV35,`HPV-16`,`HPV-18`,`HPV-26`,`HPV-31`,`HPV-33`,`HPV-35`,max_value,max_value_genotype) %>% 
+  mutate(HPV26 = 0) %>% 
+  select(patient,HPV16,HPV18,HPV31,HPV33,HPV35,HPV26,`HPV-16`,`HPV-18`,`HPV-26`,`HPV-31`,`HPV-33`,`HPV-35`,max_value,max_value_genotype) %>% 
+  mutate(across(everything(), ~replace(., is.na(.), 0))) %>% 
+  mutate(total_sum_sero = rowSums(.[, 2:7])) %>%
+  mutate(across(2:7, ~ . / total_sum_sero)) %>% 
+  mutate(total_sum_hpvseq = rowSums(.[, 8:13])) %>%
+  mutate(across(8:13, ~ . / total_sum_hpvseq)) %>% 
+  dplyr::select(-total_sum_hpvseq,-total_sum_sero) %>% 
+  rowwise() %>%
+  mutate(percentage = max(c_across(8:13)),
+         sero_sensitivity = max(c_across(2:7)))
+
+
+# Ensure Identifier is ordered before pivoting
+df_figure3d = df_combined_clin_OPC_sero_3 %>%
+  select(patient,percentage, sero_sensitivity,max_value) %>%
+  mutate(Identifier = patient) %>%
+  filter(!(is.na(sero_sensitivity) | is.na(percentage))) %>% 
+  arrange(sero_sensitivity,percentage) %>%
+  mutate(Identifier = factor(Identifier, levels = unique(Identifier))) %>% 
+  select(-patient)
+
+# Pivot to long format
+df_long <- df_figure3d %>%
+  select(-max_value) %>% 
+  pivot_longer(cols = -Identifier, names_to = "Variable", values_to = "Value") %>%
+  mutate(Value = Value * 100,
+         Variable = case_when(
+           Variable == "percentage" ~ "HPV-seq",
+           Variable == "sero_sensitivity" ~ "HPV Serology",
+           TRUE ~ Variable  # Keeps original values for other cases
+         ))
+
+# Create the plot
+x =ggplot(df_long, aes(x = Identifier, y = Value, color = Variable)) +
+  scale_color_manual(values = c("HPV-seq" = cols[10], "HPV Serology" = cols[5])) +
+  geom_rect(aes(
+    xmin = 0, xmax =50, ymin = 0, ymax = 100
+  ), fill = "#EBEBEB",color = "black", alpha = 1, inherit.aes = FALSE) +
+  geom_point(alpha=0.9,size=3) +
+  labs(x = "Patient", y = "Proportion of Dominant Genotype (%)", color = "Assay Type") +  # Rename legend title here
+  theme(axis.text.x = element_blank(),  # Remove x-axis text
+        axis.ticks.x = element_blank(),
+        panel.grid.major = element_blank(),
+        legend.position = "bottom",panel.spacing = unit(2, "lines"),
+        text = element_text(color = "black")) +
+  ylim(0,100) + facet_grid(Variable ~ ., scales = "free_y", space = "fixed") +
+  scale_x_discrete(expand = expansion(add = c(9, 9))) +
+  theme(legend.position = "none",
+        legend.text = element_text(size = 12),
+        axis.title = element_text(size = 16),# Adjust the text size
+        legend.title = element_text(size = 18),
+        axis.text = element_text(size = 14),
+        strip.text = element_blank(),
+        plot.margin = margin(r = 2)) 
+
+arrange1 = ggarrange(x, labels = c("A"),font.label = list(size=22))
+arrange1
+```
+
+## Figure 3B
+
+#### Retrieve max MFI per patient
+
+```{r}
+
+# Set the factor levels for 'patient' based on the order in the serology dataframe
+patient_filter = df_figure3d %>% 
+  filter(sero_sensitivity < 1 | percentage <1) %>% 
+  pull(Identifier) %>% 
+  unique() 
+patient_filter = patient_filter[1:40]
+
+df_figure3b_max = df_figure3d %>% 
+  filter(Identifier %in% patient_filter) %>% 
+  mutate(patient = Identifier) %>%  select(-Identifier) %>% 
+  left_join(select(df_combined_clin_OPC_sero,patient,seq_copies_mL_corrected1.67,`Dominant Genotype`,HPV_corrected)) %>% 
+  left_join(select(df_combined_clin_OPC_sero_3,patient,max_value_genotype)) %>% 
+  mutate(patient = factor(patient, levels = patient_filter))
+
+            
+
+# df_figure3d
+a_max = ggplot(df_figure3b_max, aes(x = factor(patient), y = max_value,fill=`Dominant Genotype`)) +
+  geom_col(width = 1,color = "black") +
+  theme_minimal() +
+  scale_y_continuous(breaks = function(y) c(0, 18000)) +
+  theme(axis.text.x = element_blank(),
+        legend.position = "right",
+        axis.title.x = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_text(size = 12),
+        plot.margin = margin(b = 0),
+        axis.title.y = element_text(angle = 0, vjust = 0.5,hjust = 0.6)) +
+  scale_fill_manual(values = c("HPV16" = cols[2], "HPV18" = cols[3], "HPV26" = cols[4],"HPV31" = cols[5],"HPV33" = cols[6], "HPV35" = cols[7])) +
+  labs(x = "Patient",
+       y = "Max Signal") + theme(legend.position = "none") 
+
+
+b_max = ggplot(df_figure3b_max, aes(x = factor(patient), y = log1p(seq_copies_mL_corrected1.67),fill=HPV_corrected)) +
+  geom_col(width = 1,color = "black") +
+  theme_minimal() +
+  scale_y_continuous(breaks = function(y) c(0, 12)) +
+  theme(axis.text.x = element_blank(),
+        legend.position = "right",
+        axis.title.x = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_text(size = 12),
+        plot.margin = margin(b = 0),
+        axis.title.y = element_text(angle = 0, vjust = 0.5,hjust=0.5)) +
+  scale_fill_manual(values = c("HPV-16" = cols[2], "HPV-18" = cols[3], "HPV-26" = cols[4],"HPV-31" = cols[5],"HPV-33" = cols[6], "HPV-35" = cols[7])) +
+  labs(x = "Patient",
+       y = "Max Signal") + theme(legend.position = "none")
+
+
+```
+
+#### Plot
+
+```{r fig.height = 7.5, fig.width=15}
+
+df_long <- df_combined_clin_OPC_sero_3 %>%
+  select(-percentage,-sero_sensitivity,-max_value,-max_value_genotype) %>% 
+  gather(key = "Type", value = "Proportion", -patient) %>% 
+  mutate(Proportion = Proportion*100)
+
+
+
+# Separate the data into two dataframes: serology and HPV-seq
+serology <- df_long %>%
+  filter(patient %in% patient_filter) %>%
+  filter(!grepl("-", Type)) %>%
+  mutate(Category = "Serology") %>% 
+  mutate(patient = factor(patient, levels = patient_filter))
+
+hpv_seq <- df_long %>%
+  filter(patient %in% patient_filter) %>%
+  filter(grepl("-", Type)) %>%
+  mutate(Category = "HPV-seq") %>% 
+  mutate(patient = factor(patient, levels = patient_filter))
+
+
+a = ggplot(serology, aes(x = factor(patient), y = Proportion, fill = Type)) +
+  geom_bar(stat = "identity", width = 1,color = "black") +
+  theme_minimal_hgrid() +
+  theme(axis.text.x = element_blank(),
+        legend.position = "right",
+        axis.title.x = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_text(size = 16),
+        plot.margin = margin(t = 0)) +
+  labs(x = "Patient",
+       y = "Proportion (%)",
+       fill = "Genotype")
+
+# Plot the data using ggplot2
+b = ggplot(hpv_seq, aes(x = factor(patient), y = Proportion, fill = Type)) +
+  geom_bar(stat = "identity", width = 1,color = "black") +
+  theme_minimal_hgrid() +
+  theme(axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    legend.position = "right",
+    axis.title = element_text(size = 16),
+    plot.margin = margin(t = 0)) +
+  labs(       x = "Patient",
+       y = "Proportion (%)",
+       fill = "Genotype")
+
+legend <- get_legend(a)
+
+ggarrange(a_max,a, b_max,b, nrow = 4,ncol=1,align = "v",
+                     heights = c(0.15, 0.85, 0.15, 0.9),
+                     common.legend = TRUE, legend="right",font.label = list(size=16))
+arrange2 = ggarrange(a_max, a, b_max, b, 
+                      nrow = 4, ncol = 1, align = "v",
+                      heights = c(0.15, 0.85, 0.15, 0.9),
+                      common.legend = FALSE, legend = "none",
+                      font.label = list(size = 16))
+
+
+plot_grid(arrange1, arrange2, ncol = 2, rel_widths = c(2.5, 11))
+# fig_d
+# 
+# 
+# corrplot(cor_matrix,tl.col = 'black', p.mat = testRes$p, 
+#                  method = 'circle', insig='blank',cl.pos = 'b') %>%  
+#   corrRect(name = c('HPV16E1',"HPV-seq","dPCR"))
+```
+
+# Figure 4
+
+## Figure 4C + 4D
+
+```{r}
+
+
+df_lm = df_combined_clin_OPC_sero %>% 
+  filter(!is.na(sum_gtv_nodes)) %>% 
+  filter(HPV_corrected == "HPV-16")
+
+
+p1 <- ggplot(df_lm, aes(x = log10(sum_gtv_nodes+1), y = log10(seq_copies_mL_corrected1.67+1))) +
+  geom_point(alpha = 0.9,pch=21,fill = cols[10],color="sienna3") +
+  stat_smooth(method = "lm") +
+  labs(
+    x = "log(Nodal GTV)",
+    y = str_wrap("HPV ctDNA [log(Copies/mL)]",10)) +
+  theme(axis.title = element_text(size = 16),# Adjust the text size
+        axis.text = element_text(size = 14),       # Adjust the text size for both axis texts
+        axis.title.y = element_text(size = 13)) 
+
+# p1
+
+p2 <- ggplot(df_lm, aes(x = log10(sum_gtv_nodes+1), y = `HPV16E6`)) +
+  geom_point(alpha = 0.9,pch=21,fill = cols[5],color="darkred") +
+  stat_smooth(method = "lm") +
+  labs(
+    x = "log(Nodal GTV)",
+    y = "16E6  MFI"
+  )  + 
+  theme(axis.title = element_text(size = 16),# Adjust the text size
+        axis.text = element_text(size = 14)) 
+
+# p2
+
+p3 <- ggplot(df_lm, aes(x = log10(gtv_primary+1), y = log10(seq_copies_mL_corrected1.67+1))) +
+  geom_point(alpha = 0.9,pch=21,fill = cols[10],color="sienna3") +
+  stat_smooth(method = "lm") +
+  labs(
+    x = "log(Primary GTV)",
+    y = str_wrap("HPV ctDNA [log(Copies/mL)]",10)) +
+  theme(axis.title = element_text(size = 16),# Adjust the text size
+        axis.text = element_text(size = 14),       # Adjust the text size for both axis texts
+        axis.title.y = element_text(size = 13)) 
+
+# p3
+
+p4 <- ggplot(df_lm, aes(x = log10(gtv_primary+1), y = `HPV16E6`)) +
+  geom_point(alpha = 0.9,pch=21,fill = cols[5],color="darkred") +
+  stat_smooth(method = "lm") +
+  labs(
+    x = "log(Primary GTV)",
+    y = "16E6 MFI"
+  )  + 
+  theme(axis.title = element_text(size = 16),# Adjust the text size
+        axis.text = element_text(size = 14)) 
+
+# p4
+
+p5 <- ggplot(df_lm, aes(x = log10(gtv_combined+1), y = log10(seq_copies_mL_corrected1.67+1))) +
+  geom_point(alpha = 0.9,pch=21,fill = cols[10],color="sienna3") +
+  stat_smooth(method = "lm") +
+  labs(
+    x = "log(Summed GTV)",
+    y = str_wrap("HPV ctDNA [log(Copies/mL)]",10)) +
+  theme(axis.title = element_text(size = 16),# Adjust the text size
+        axis.text = element_text(size = 14),       # Adjust the text size for both axis texts
+        axis.title.y = element_text(size = 13)) 
+
+# p5
+
+p6 <- ggplot(df_lm, aes(x = log10(gtv_combined+1), y = `HPV16E6`)) +
+  geom_point(alpha = 0.9,pch=21,fill = cols[5],color="darkred") +
+  stat_smooth(method = "lm") +
+  labs(
+    x = "log(Summed GTV)",
+    y = "16E6 MFI"
+  ) + 
+  theme(axis.title = element_text(size = 16),# Adjust the text size
+        axis.text = element_text(size = 14)) 
+
+# p6
+
+g1 = ggarrange(p4,p2,p6,ncol=3,nrow=1, align = "v")
+g3 = ggarrange(p3,p1,p5,ncol=3,nrow=1, align = "v")
+cor.test(log10(df_lm$sum_gtv_nodes+1),
+         log10(df_lm$seq_copies_mL_corrected1.67+1))
+
+cor.test(log10(df_lm$gtv_primary+1),
+         log10(df_lm$seq_copies_mL_corrected1.67+1))
+
+cor.test(log10(df_lm$gtv_combined+1),
+         log10(df_lm$seq_copies_mL_corrected1.67+1))
+# 
+# cor.test(log10(df_lm$gtv_primary+1),
+#          log10(df_lm$seq_copies_mL_corrected1.67+1))
+# 
+# cor.test(log10(df_lm$sum_gtv_nodes+1),
+#          df_lm$`HPV16E6`)
+# 
+# cor.test(log10(df_lm$gtv_primary+1),
+#          df_lm$`HPV16E6`)
+# 
+# cor.test(log10(df_lm$gtv_combined+1),
+#          df_lm$`HPV16E6`)
+```
+
+```{r}
+ggplot(df_lm, aes(x = log10(gtv_combined+1), y = log10(seq_copies_mL_corrected1.67+1),color=sex)) +
+  geom_point(alpha = 0.9) +
+  # stat_smooth(method = "lm") +
+  labs(
+    x = "log(Summed GTV)",
+    y = str_wrap("HPV ctDNA [log(Copies/mL)]",10)) +
+  theme(axis.title = element_text(size = 16),# Adjust the text size
+        axis.text = element_text(size = 14),       # Adjust the text size for both axis texts
+        axis.title.y = element_text(size = 13)) 
+
+
+ggplot(df_lm, aes(x = log10(gtv_combined+1), y = log10(seq_copies_mL_corrected1.67+1))) +
+  geom_point(alpha = 0.9,pch=21,fill = cols[10],color="sienna3") +
+  stat_smooth(method = "lm") +
+  labs(
+    x = "log(Summed GTV)",
+    y = str_wrap("HPV ctDNA [log(Copies/mL)]",10)) +
+  theme(axis.title = element_text(size = 16),# Adjust the text size
+        axis.text = element_text(size = 14),       # Adjust the text size for both axis texts
+        axis.title.y = element_text(size = 13)) 
+```
+
+## Figure 4A + 4B
+
+```{r }
+test1 = df_combined_clin_OPC_sero %>% 
+  filter(!is.na(stage_n_ajcc8)) %>% 
+  filter(HPV_corrected == "HPV-16")
+
+test2 = df_combined_clin_OPC_sero %>% 
+  filter(!is.na(stage_t_ajcc8)) %>% 
+  filter(HPV_corrected == "HPV-16") 
+
+
+p2 <- ggplot(test1, aes(x = stage_n_ajcc8, y = `HPV16E6`)) +
+  geom_boxplot(alpha = 0.8,fill=cols[5],outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.6,pch=21,fill = cols[5],color="darkred") +
+  labs(
+    x = "N-Category (AJCC8)",
+    y = "16E6 MFI"
+  ) + 
+  theme(axis.title = element_text(size = 16),# Adjust the text size
+        axis.text = element_text(size = 14))  + stat_compare_means(method ="anova")
+
+
+p1 <- ggplot(test2, aes(x = stage_t_ajcc8, y = `HPV16E6`)) +
+  geom_boxplot(alpha = 0.8,fill=cols[5],outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.6,pch=21,fill = cols[5],color="darkred") +
+  labs(
+    x = "T-Category (AJCC8)",
+    y = "16E6 MFI"
+  ) + 
+  theme(axis.title = element_text(size = 16),# Adjust the text size
+        axis.text = element_text(size = 14))  + stat_compare_means(method ="anova")
+
+p3 <- ggplot(test2, aes(x = stage_ajcc8, y = `HPV16E6`)) +
+  geom_boxplot(alpha = 0.8,fill=cols[5],outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.6,pch=21,fill = cols[5],color="darkred") +
+  labs(
+    x = "Stage (AJCC8)",
+    y = "16E6 MFI"
+  ) + 
+  theme(axis.title = element_text(size = 16),# Adjust the text size
+        axis.text = element_text(size = 14)) + stat_compare_means(method ="anova")
+
+
+p5 <- ggplot(test1, aes(x = stage_n_ajcc8, y = log10(seq_copies_mL_corrected1.67+1))) +
+  geom_boxplot(alpha = 0.8,fill=cols[10],outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.8,pch=21,fill = cols[10],color="sienna3") +
+  labs(
+    x = "N-Category  (AJCC8)",
+    y = str_wrap("HPV ctDNA [log(Copies/mL)]",10)
+  ) + 
+  theme(axis.title = element_text(size = 16),# Adjust the text size
+        axis.text = element_text(size = 14),       # Adjust the text size for both axis texts
+        axis.title.y = element_text(size = 13)) + stat_compare_means(method ="anova")
+
+p4 <- ggplot(test2, aes(x = stage_t_ajcc8, y = log10(seq_copies_mL_corrected1.67+1))) +
+  geom_boxplot(alpha = 0.8,fill=cols[10],outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.8,pch=21,fill = cols[10],color="sienna3") +
+  labs(
+    x = "T-Category  (AJCC8)",
+    y = str_wrap("HPV ctDNA [log(Copies/mL)]",10)) + 
+  theme(axis.title = element_text(size = 16),# Adjust the text size
+        axis.text = element_text(size = 14),       # Adjust the text size for both axis texts
+        axis.title.y = element_text(size = 13)) + stat_compare_means(method ="anova")
+
+p6 <- ggplot(test2, aes(x = stage_ajcc8, y = log10(seq_copies_mL_corrected1.67+1))) +
+  geom_boxplot(alpha = 0.8,fill=cols[10],outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.8,pch=21,fill = cols[10],color="sienna3") +
+  labs(
+    x = "Stage (AJCC8)",
+    y = str_wrap("HPV ctDNA [log(Copies/mL)]",10)) +
+  theme(axis.title = element_text(size = 16),# Adjust the text size
+        axis.text = element_text(size = 14),       # Adjust the text size for both axis texts
+        axis.title.y = element_text(size = 13)) + stat_compare_means(method ="anova")
+
+g2 = ggarrange(p1,p2,p3,ncol = 3,nrow = 1)
+g4 = ggarrange(p4,p5,p6,ncol = 3,nrow = 1)
+
+```
+
+```{r, fig.width=13,fig.height=12}
+spacer <- ggplot() + theme_void()
+ggarrange(g2, g1,spacer,g4,g3, ncol = 1, nrow = 5, heights = c(1, 1, 0.2, 1, 1),align = "v")
+```
+
+```{r}
+df_sensitivity <- df_lm %>%
+  summarize(
+    E6 = sum(HPV16E6 != 0)/200,
+    E7 = sum(HPV16E7 != 0)/200,
+    L1 = sum(HPV16L1 != 0)/200,
+    E1 = sum(HPV16E1 != 0)/200,
+    E2 = sum(HPV16E2 != 0)/200,
+    E4 = sum(HPV16E4 != 0)/200
+  ) %>% 
+  gather(Antibody,Proportion)
+
+df_sensitivity %>% 
+  ggplot(aes(x = Antibody, y = Proportion)) + 
+  geom_bar(stat = "identity",fill = cols[10],color="sienna3") +
+  xlab("HPV16 Antibody") + 
+  ylab("Proportion with Detectable Antibody") +
+  theme(axis.title = element_text(size = 16),# Adjust the text size
+        axis.text = element_text(size = 14),       # Adjust the text size for both axis texts
+        axis.title.y = element_text(size = 13))
+
+```
+
+# Supplemental material
+
+# Figure S1: plots of all the HPV serology
+
+```{r}
+test1 = df_combined_clin_OPC_sero %>% 
+  filter(!is.na(stage_n_ajcc8)) %>% 
+  filter(HPV_corrected == "HPV-16")
+
+test2 = df_combined_clin_OPC_sero %>% 
+  filter(!is.na(stage_t_ajcc8)) %>% 
+  filter(HPV_corrected == "HPV-16") 
+
+
+# List of variables to plot
+variables <- c("`HPV16E1`", "`HPV16E2`", "`HPV16E4`", "`HPV16E6`", "`HPV16E7`", "`HPV16L1`")
+
+# Function to create plots
+create_plot_1 <- function(variable_name) {
+  ggplot(test1, aes_string(x = "stage_t_ajcc8", y = variable_name)) +
+    geom_boxplot(alpha = 0.8, fill = cols[5], outlier.shape = NA) +
+    geom_jitter(width = 0.2, alpha = 0.6, pch = 21, fill = cols[5], color = "darkred") +
+    labs(
+      x = "T-Category (AJCC8)",
+      y = str_wrap("HPV ctDNA [log(Copies/mL)]",10)) +
+    theme(axis.title = element_text(size = 16), axis.text = element_text(size = 14))
+}
+
+create_plot_2 <- function(variable_name) {
+  ggplot(test1, aes_string(x = "stage_n_ajcc8", y = variable_name)) +
+    geom_boxplot(alpha = 0.8, fill = cols[5], outlier.shape = NA) +
+    geom_jitter(width = 0.2, alpha = 0.6, pch = 21, fill = cols[5], color = "darkred") +
+    labs(
+      x = "N-Category (AJCC8)",
+      y = str_wrap("HPV ctDNA [log(Copies/mL)]",10)) +
+    theme(axis.title = element_text(size = 16), axis.text = element_text(size = 14))
+}
+
+create_plot_3 <- function(variable_name) {
+  ggplot(test1, aes_string(x = "stage_ajcc8", y = variable_name)) +
+    geom_boxplot(alpha = 0.8, fill = cols[5], outlier.shape = NA) +
+    geom_jitter(width = 0.2, alpha = 0.6, pch = 21, fill = cols[5], color = "darkred") +
+    labs(
+      x = "Overall Stage (AJCC8)",
+      y = str_wrap("HPV ctDNA [log(Copies/mL)]",10)) +
+    theme(axis.title = element_text(size = 16), axis.text = element_text(size = 14))
+}
+
+
+
+# Loop over variables and create plots
+plots_1 <- lapply(variables, create_plot_1)
+plots_2 <- lapply(variables, create_plot_2)
+plots_3 <- lapply(variables, create_plot_3)
+
+combined_plot <- ggarrange(
+  plotlist = c(plots_1, plots_2, plots_3),
+  ncol = 6, nrow = 3  # Adjust the number of columns and rows as needed
+)
+
+# Print the combined plot
+print(combined_plot)
+```
+
+# Figure S2
+
+```{r}
+df_subset = df_combined_clin_OPC_sero %>% 
+  select(HPV16E1, HPV18E1, HPV16E2, HPV18E2, HPV16E4, HPV18E4, HPV16E6, HPV18E6, HPV31E6, HPV33E6, HPV35E6, HPV45E6, HPV52E6, HPV58E6, HPV6bE6, HPV11E6, HPV16E7, HPV18E7, HPV31E7, HPV33E7, HPV35E7, HPV45E7, HPV52E7, HPV58E7, HPV6bE7, HPV11E7, HPV11L1, HPV16L1, HPV18L1, HPV31L1, HPV33L1, HPV35L1, HPV45L1, HPV52L1, HPV58L1, HPV6L1)
+
+
+cor_matrix <- cor(df_subset)
+testRes = cor.mtest(cor_matrix, conf.level = 0.95)
+
+# round(cor_matrix, 3)
+corrplot(cor_matrix,tl.col = 'black',p.mat = testRes$p, method = 'circle', insig='blank',cl.pos = 'b') %>%
+  corrRect(name = c('HPV16E1', 'HPV16E2', 'HPV16E4', 'HPV16E6', 'HPV16E7', 'HPV11L1','HPV6L1'))
+
+# corrplot(cor_matrix,tl.col = 'black',cl.pos = 'b') %>%
+#   corrRect(name = c('HPV16E1', 'HPV16E2', 'HPV16E4', 'HPV16E6', 'HPV16E7', 'HPV11L1', 'HPV6L1'))
+```
+
+# Figure S3
+
+## Figure S3a
+
+```{r}
+df_subset_E6 = df_combined_clin_OPC_sero %>% 
+  select(HPV16E6, HPV18E6, HPV31E6, HPV33E6, HPV35E6)
+
+df_subset_E7 = df_combined_clin_OPC_sero %>% 
+  select(HPV16E7, HPV18E7, HPV31E7, HPV33E7, HPV35E7) 
+
+df_subset_L1 = df_combined_clin_OPC_sero %>% 
+  select(HPV16L1, HPV18L1, HPV31L1, HPV33L1, HPV35L1)
+
+
+cor_matrixE6 <- cor(df_subset_E6) %>% 
+  as.data.frame() %>% 
+  pivot_longer(cols = c(HPV16E6, HPV18E6, HPV31E6, HPV33E6, HPV35E6)) %>% 
+  filter(value != 1) %>% 
+  mutate(antibody = "E6")
+
+cor_matrixE7 <- cor(df_subset_E7) %>% 
+  as.data.frame() %>% 
+  pivot_longer(cols = c(HPV16E7, HPV18E7, HPV31E7, HPV33E7, HPV35E7)) %>% 
+  filter(value != 1) %>% 
+  mutate(antibody = "E7")
+
+cor_matrixL1 <- cor(df_subset_L1) %>% 
+  as.data.frame() %>% 
+  pivot_longer(cols = c(HPV16L1, HPV18L1, HPV31L1, HPV33L1, HPV35L1)) %>% 
+  filter(value != 1) %>% 
+  mutate(antibody = "L1") %>% 
+  bind_rows(cor_matrixE7,cor_matrixE6) %>% 
+  mutate(genotype = substr(name, 1, 5))
+  
+
+
+
+fig_d = cor_matrixL1 %>%
+  ggplot2::ggplot(aes(antibody, value,fill=factor(genotype))) +
+  geom_boxplot(alpha=0.7) + 
+  labs(x = "HPV Oncoproteins", y = "Pearson Correlation",fill = "HPV Genotype") +
+  theme(legend.position = NULL,
+        legend.text = element_text(size = 16),
+        axis.title = element_text(size = 20),# Adjust the text size
+        legend.title = element_text(size = 18),
+        axis.text = element_text(size = 20)) 
+
+
+fig_d
+
+
+
+
+
+```
+
+## Figure S3bc
+
+```{r}
+y_var <- "HPV16E1"
+
+a =ggplot(data = df_combined_clin_OPC_sero, aes(y = !!sym(y_var), x = log10(seq_copies_mL_corrected1.67+1))) +
+  geom_point() +
+  labs(y = paste0(y_var," MFI"), x = NULL)
+
+a_marginal = ggMarginal(a, type = "histogram",yparams = list(binwidth = 1000),xparams = list(binwidth = 0.3))
+
+y_var <- "HPV16E2"
+
+b =ggplot(data = df_combined_clin_OPC_sero, aes(y = !!sym(y_var), x = log10(seq_copies_mL_corrected1.67+1))) +
+  geom_point() +
+  labs(y = paste0(y_var," MFI"), x = NULL)
+
+b_marginal = ggMarginal(b, type = "histogram",margins = "y",yparams = list(binwidth = 2000))
+
+y_var <- "HPV16E6"
+
+c =ggplot(data = df_combined_clin_OPC_sero, aes(y = !!sym(y_var), x = log10(seq_copies_mL_corrected1.67+1))) +
+  geom_point() +
+  labs(y = paste0(y_var," MFI"), x = NULL)
+
+c_marginal = ggMarginal(c, type = "histogram",margins = "y",yparams = list(binwidth = 2000))
+
+y_var <- "HPV16L1"
+
+
+d =ggplot(data = df_combined_clin_OPC_sero, aes(y = !!sym(y_var), x = log10(seq_copies_mL_corrected1.67+1))) +
+  geom_point() +
+  labs(y = paste0(y_var," MFI"), x =NULL)
+
+d_marginal = ggMarginal(d, type = "histogram",yparams = list(binwidth = 1000),xparams = list(binwidth = 0.3))
+
+y_var <- "HPV16E7"
+
+e = ggplot(data = df_combined_clin_OPC_sero, aes(y = !!sym(y_var), x = log10(seq_copies_mL_corrected1.67+1))) +
+  geom_point() +
+  labs(y = paste0(y_var," MFI"), x = "ctDNA Concentration [log(Copies/mL)]")
+
+e_marginal = ggMarginal(e, type = "histogram",margins = "y",yparams = list(binwidth = 2000))
+
+ggarrange(c_marginal,e_marginal, ncol = 1, nrow =2)
+
+```
+
+# Figure S4
+
+```{r, warning = FALSE, fig.width=8,fig.height=4}
+
+####################
+# Add peripheral
+####################
+
+df_blood = read_xlsx("/Users/lucaspenny/Documents/1 Bratman/head_neck_analysis_lucas/serology/data/PeripheralBlood/20240401_Blood_testing.xlsx")
+df_blood$mrn = as.integer(df_blood$mrn)
+
+
+df_combined_clin_OPC_sero = df_combined_clin_OPC_sero %>%
+  left_join(df_blood,by = "mrn") %>%
+  filter(!is.na(mrn))
+
+df_combined_clin_OPC_sero$Lymph = as.numeric(df_combined_clin_OPC_sero$Lymph)
+df_combined_clin_OPC_sero$Mono = as.numeric(df_combined_clin_OPC_sero$Mono)
+df_combined_clin_OPC_sero$NLR = log10(df_combined_clin_OPC_sero$NLR+1)
+
+
+
+
+
+
+df_transformed <- df_combined_clin_OPC_sero %>%
+  select(seq_copies_mL_corrected1.67,sum_gtv_nodes,gtv_primary,smoking_packyears,HPV16E6,Lymph,Neutro,HB,NLR,Mono,platelet) %>% 
+  mutate(
+    # Original variables are already in the dataframe, so no transformation needed for no log scaling
+    
+    # Log scale only ctDNA with different offsets
+    log_ctDNA_001 = log10(seq_copies_mL_corrected1.67 + 0.001),
+    
+    # Log scale only GTV with different offsets
+    log_sum_gtv_nodes_1 = log10(sum_gtv_nodes + 1),
+    log_gtv_primary_1 = log10(gtv_primary + 1)) %>% 
+  select(-sum_gtv_nodes,-gtv_primary,-seq_copies_mL_corrected1.67,-NLR)
+
+# ggpairs(df_transformed,progress = FALSE)
+
+
+
+y_var <- "Lymph"
+a1 = ggplot(data = df_combined_clin_OPC_sero, aes(y = !!sym(y_var), x = stage_t_ajcc8)) + 
+  geom_point()+ geom_boxplot(outlier.shape=NA)  +
+  labs(
+    x = "T-Category (AJCC8)",
+    y = "Absolute Lymphocyte Levels")+  stat_compare_means()
+
+b1 = ggplot(data = df_combined_clin_OPC_sero, aes(y = !!sym(y_var), x = stage_n_ajcc8)) + 
+  geom_point()+ geom_boxplot(outlier.shape=NA)  +
+  labs(
+    x = "N-Category (AJCC8)",
+    y = "Absolute Lymphocyte Levels")+  stat_compare_means()
+
+
+c1 = ggplot(data = df_combined_clin_OPC_sero, aes(y = !!sym(y_var), x = stage_ajcc8)) + 
+  geom_point() + geom_boxplot(outlier.shape=NA)  +
+  labs(
+    x = "Stage (AJCC8)",
+    y = "Absolute Lymphocyte Levels") +  stat_compare_means()
+
+ggarrange(a1, b1,c1,ncol = 3)
+
+
+y_var <- "NLR"
+b1 = ggplot(data = df_combined_clin_OPC_sero, aes(y = !!sym(y_var), x = stage_n_ajcc8)) + 
+  geom_point()+ geom_boxplot() +  stat_compare_means()
+
+a1 = ggplot(data = df_combined_clin_OPC_sero, aes(y = !!sym(y_var), x = stage_t_ajcc8)) + 
+  geom_point()+ geom_boxplot() +  stat_compare_means()
+
+
+c1 = ggplot(data = df_combined_clin_OPC_sero, aes(y = !!sym(y_var), x = stage_ajcc8)) + 
+  geom_point() + geom_boxplot() +  stat_compare_means()
+
+ggarrange(a1, b1,c1,ncol = 3)
+
+y_var <- "Neutro"
+b1 = ggplot(data = df_combined_clin_OPC_sero, aes(y = !!sym(y_var), x = stage_n_ajcc8)) + 
+  geom_point()+ geom_boxplot() +  stat_compare_means()
+
+a1 = ggplot(data = df_combined_clin_OPC_sero, aes(y = !!sym(y_var), x = stage_t_ajcc8)) + 
+  geom_point()+ geom_boxplot() +  stat_compare_means()
+
+
+c1 = ggplot(data = df_combined_clin_OPC_sero, aes(y = !!sym(y_var), x = stage_ajcc8)) + 
+  geom_point() + geom_boxplot() +  stat_compare_means()
+
+ggarrange(a1, b1,c1,ncol = 3)
+```
+
+# Figure S5
+
+```{r}
+
+df_transformed <- df_combined_clin_OPC_sero %>%
+  select(seq_copies_mL_corrected1.67,sum_gtv_nodes,gtv_primary,gtv_combined,smoking_packyears,Lymph,Neutro,HB,NLR,Mono,platelet,HPV16E6) %>% 
+  mutate(
+    log_ctDNA_1 = log10(seq_copies_mL_corrected1.67 + 1),
+    log_sum_gtv_nodes_1 = log10(sum_gtv_nodes + 1),
+    log_gtv_primary_1 = log10(gtv_primary + 1),
+    log_gtv_comb_1 = log1p(gtv_combined)) %>% 
+  select(-sum_gtv_nodes,-gtv_primary,-seq_copies_mL_corrected1.67,-NLR,-smoking_packyears,-gtv_combined) %>% 
+  mutate(across(everything(), ~ifelse(is.na(.), 0, .)))
+
+cor_matrix_s5 <- cor(df_transformed)
+# testRes = cor.mtest(cor_matrix_s5, conf.level = 0.95)
+
+# round(cor_matrix, 3)
+fig_s5 = corrplot(cor_matrix_s5,tl.col = 'black', 
+                 method = 'circle', insig='blank',cl.pos = 'b')
+
+cor.test(log1p(df_transformed$Lymph),
+         log1p(df_transformed$log_sum_gtv_nodes_1))
+
+cor.test(log1p(df_transformed$Lymph),
+         log1p(df_transformed$log_gtv_primary_1))
+
+cor.test(log1p(df_transformed$Lymph),
+         log1p(df_transformed$log_gtv_comb_1))
+
+cor.test(log1p(df_transformed$Lymph),
+         log1p(df_transformed$log_ctDNA_1))
+
+
+```
+
+### Correlation plots
+
+```{r}
+model <- lm(log10(sum_gtv_nodes + 1) ~ log10(seq_copies_mL_corrected1.67 + 1) + `HPV16E6` + Lymph + Integration_score, data = df_combined_clin_OPC_sero)
+model2 <- lm(log10(gtv_primary + 1) ~ log10(seq_copies_mL_corrected1.67 + 1) + `HPV16E6` + Lymph+ Integration_score, data = df_combined_clin_OPC_sero)
+model3 <- lm(log10(gtv_combined + 1) ~ log10(seq_copies_mL_corrected1.67 + 1) , data = df_combined_clin_OPC_sero)
+
+summary(model)
+summary(model2)
+summary(model3)
+
+# model <- lm(log10(sum_gtv_nodes + 1) ~ `HPV16E6`, data = df_combined_clin_OPC_sero)
+# model2 <- lm(log10(gtv_primary + 1) ~ `HPV16E6`, data = df_combined_clin_OPC_sero)
+# model3 <- lm(log10(gtv_combined + 1) ~ `HPV16E6`, data = df_combined_clin_OPC_sero)
+
+test <- df_combined_clin_OPC_sero %>% 
+  select(gtv_combined,seq_copies_mL_corrected1.67,HPV16E6,HPV16E7) %>%
+  mutate(gtv_combined = log1p(gtv_combined),
+         seq_copies_mL_corrected1.67 = log1p(seq_copies_mL_corrected1.67),
+         HPV16E6 = log1p(HPV16E6),
+         HPV16E7 = log1p(HPV16E7))
+
+ggpairs(test,progress = FALSE)
+
+corr_plot_og <- df_combined_clin_OPC_sero %>% 
+  select(gtv_combined,seq_copies_mL_corrected1.67,HPV16E6,HPV16E7) %>%
+  mutate(gtv_combined = log1p(gtv_combined),
+         seq_copies_mL_corrected1.67 = log1p(seq_copies_mL_corrected1.67),
+         HPV16E6 = HPV16E6,
+         HPV16E7 = HPV16E7)
+
+ggpairs(corr_plot_og,progress = FALSE)
+
+```
